@@ -1,53 +1,41 @@
-import twitchAPI
-from gtts import gTTS
-import discord
-import os
+import asyncio
+import threading
+from discordBot import run_discord_bot, DiscordBot
+from twitchBot import run_twitch_bot, TwitchBot
 from dotenv import load_dotenv
-
-from discord.ext import commands
+import os
+import azure
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
-intents = discord.Intents.default()
-intents.message_content = True
+discord_bot = DiscordBot()
+twitch_bot = TwitchBot(discord_bot=discord_bot)
 
-client = commands.Bot(command_prefix = '$', intents=intents)
+discord_bot.twitch_bot = twitch_bot
 
-@client.event
-async def on_ready():
-    print("Ready for use\n")
+# Start wait loop so twitch bot gets active discord bot
+def start_discord():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(discord_bot.start(TOKEN))
 
-@client.command()
-async def join(ctx):
-    print("Join Command Ran")
-    print(ctx)
-    if ctx.author.voice == None:
-        await ctx.send("You are not in a Voice Channel!")
-        return
-    
-    if ctx.voice_client != None and ctx.voice_client == ctx.author.voice.channel:
-        await ctx.send("Im already connected to this channel")
-        return
+def start_twitch():
+    while not discord_bot.is_ready():  # Wait until Discord bot is fully ready
+        pass
 
-    if ctx.voice_client != None:
-        await ctx.voice_client.disconnect()
+    print("Discord bot is ready! Starting Twitch bot...")
+    discord_bot.twitch_bot = twitch_bot
+    run_twitch_bot(discord_bot)  # Pass the instance
 
-    channel = ctx.author.voice.channel
-    await channel.connect()
+if __name__ == "__main__":
+    discord_thread = threading.Thread(target=start_discord)
+    twitch_thread = threading.Thread(target=start_twitch)
 
-@client.command()
-async def leave(ctx):
-    print("Leave Command Ran")
-    if ctx.voice_client == None:
-        await ctx.send("I am not in a Voice Channel")
-        return
-        
-    await ctx.voice_client.disconnect()
+    discord_thread.start()
+    twitch_thread.start()
 
-@client.command()
-async def link(ctx):
-    print("Link Twitch Command Ran")
-    await ctx.send("Linking Twitch!")
+    discord_thread.join()
+    twitch_thread.join()
 
-client.run(TOKEN)
+    tts_manager = azure.AzureTTSManager()
